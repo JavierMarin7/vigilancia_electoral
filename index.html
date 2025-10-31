@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Vigilancia Electoral</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
+  <!-- Bootstrap / Leaflet / DataTables / Chart.js -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet"/>
+  <link href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" rel="stylesheet"/>
+  <link href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" rel="stylesheet"/>
+  <link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet"/>
+  <link href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css" rel="stylesheet"/>
+
+  <style>
+    :root { --board-max: 1180px; }
+    body { background:#f4f6f8; color:#212529; }
+
+    .gov-banner{ background:#2e64d2; height:46px; }
+    .gov-banner img{ height:30px; }
+
+    .board{ max-width:var(--board-max); margin:0 auto; padding:34px 16px; }
+    header{ background:#fff; border-radius:1rem; box-shadow:0 8px 24px rgba(0,0,0,.06); }
+    .kpi-card,.chart-card,.soft-card{ border:0; border-radius:1rem; box-shadow:0 8px 24px rgba(0,0,0,.06); background:#fff }
+    .kpi-value{ font-size:clamp(22px,3.2vw,36px); font-weight:800 }
+    .chart-container{ height:380px; position:relative }
+    #map{ height:520px; border-radius:.75rem }
+    .legend { background:#fff; padding:.5rem .75rem; border-radius:.5rem; line-height:1.2; box-shadow:0 1px 3px rgba(0,0,0,.15) }
+    #legend div{ margin:2px 0; font-size:.85rem }
+    #legend i{ display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+    .header-ues .brand-strip{ display:flex; flex-wrap:wrap; gap:.75rem; align-items:center }
+    .header-ues .brand-strip img{ height:42px }
+    .status-badge{ font-size:.75rem }
+    .dt-buttons .btn{ margin-right:.25rem }
+    .help-text{ font-size:.85rem; color:#6c757d }
+
+    /* Modal simple (sin JS de Bootstrap) */
+    .modal-lite{ position:fixed; inset:0; display:none; background:rgba(0,0,0,.35); z-index:1050; }
+    .modal-lite .win{ max-width:760px; width:92%; background:#fff; margin:6vh auto; border-radius:.75rem; box-shadow:0 12px 40px rgba(0,0,0,.25); overflow:hidden }
+    .modal-lite .head{ padding:12px 16px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:8px }
+    .modal-lite .body{ padding:16px }
+    .modal-lite .foot{ padding:12px 16px; border-top:1px solid #eee; display:flex; gap:8px; justify-content:flex-end }
+	.diag-hidden { display: none; }
+
+  </style>
+</head>
+<body>
+  <!-- Banner GOV.CO -->
+  <div class="gov-banner">
+    <div class="container d-flex align-items-center h-100">
+      <img src="https://cdn.www.gov.co/assets/images/logo.png" alt="GOV.CO">
+    </div>
+  </div>
+
+  <main class="bg-shell">
+    <div class="board">
+
+      <!-- Header -->
+      <header class="header-ues py-3 px-3">
+        <div class="row g-3 align-items-center">
+          <div class="col-12 col-lg-6">
+            <div class="brand-strip">
+              <img src="https://i.postimg.cc/44LqQ7Mx/logo-procuraduria.jpg" alt="Procuraduría">
+            </div>
+          </div>
+          <div class="col">
+            <div class="d-flex flex-column">
+              <h1 class="h2 m-0">Vigilancia Electoral</h1>
+              <div class="small text-muted mt-1">
+                Fuente: CSV remoto / local / manual
+                <span id="lastUpdate" class="badge text-bg-light border status-badge ms-2">Cargando…</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Filtros y Fuente de datos -->
+      <section class="container-fluid px-0 my-3">
+        <section class="soft-card p-3 mb-3">
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-3">
+              <label class="form-label mb-1">Municipio</label>
+              <select id="f_municipio" class="form-select form-select-sm"><option value="">Todos</option></select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1">Canal</label>
+              <select id="f_canal" class="form-select form-select-sm"><option value="">Todos</option></select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1">Reportante</label>
+              <select id="f_reportante" class="form-select form-select-sm"><option value="">Todos</option></select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1">Tipo</label>
+              <select id="f_tipo" class="form-select form-select-sm"><option value="">Todos</option></select>
+            </div>
+
+            <div class="col-12 col-md-4">
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label">Desde</label>
+                  <input type="date" id="f_desde" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Hasta</label>
+                  <input type="date" id="f_hasta" class="form-control form-control-sm">
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-8 d-flex flex-wrap gap-2 justify-content-end align-items-end">
+              <div class="d-flex flex-column flex-grow-1" style="min-width:300px; max-width:520px;">
+                <label class="form-label mb-1">Fuente de datos</label>
+                <div class="d-flex gap-2">
+                  <input type="file" id="fileQuejas" accept=".csv" class="form-control form-control-sm"/>
+                  <input type="url" id="urlQuejas" placeholder="https://…/REGISTRO_QUEJA.csv" class="form-control form-control-sm"/>
+                </div>
+                <div class="help-text">Puedes abrir con parámetro: <code>?src=https://…/REGISTRO_QUEJA.csv</code>. Si sirves un CSV local, usa HTTP (no <code>file:///</code>).</div>
+              </div>
+              <div class="ms-auto d-flex flex-wrap gap-2">
+                <button id="btnFiltrar"   class="btn btn-primary btn-sm">Aplicar filtros</button>
+                <button id="btnLimpiar"   class="btn btn-outline-secondary btn-sm">Limpiar</button>
+                <button id="btnCargar"    class="btn btn-outline-primary btn-sm">Refrescar datos</button>
+                <button id="btnCargarURL" class="btn btn-success btn-sm">Cargar URL</button>
+                <button id="btnCols"      class="btn btn-warning btn-sm">Revisar columnas</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Diagnóstico de carga -->
+        <section class="soft-card p-3 mb-3">
+          <div class="d-flex align-items-center mb-2">
+            <h5 class="m-0 me-auto">Diagnóstico de carga</h5>
+            <span id="diagStatus" class="badge text-bg-light border">Sin ejecutar</span>
+          </div>
+          <div id="diagBox" class="small">
+            <ul class="mb-0" id="diagList"></ul>
+          </div>
+        </section>
+<section class="soft-card p-3 mb-3 diag-hidden" id="diagSection">
+  <div class="d-flex align-items-center mb-2">
+    <h5 class="m-0 me-auto">Diagnóstico de carga</h5>
+    <span id="diagStatus" class="badge text-bg-light border">Sin ejecutar</span>
+    <button id="btnToggleDiag" class="btn btn-sm btn-outline-secondary ms-2" title="Mostrar/ocultar diagnóstico">Mostrar</button>
+  </div>
+  <div id="diagBox" class="small">
+    <ul class="mb-0" id="diagList"></ul>
+  </div>
+</section>
+
+
+
+
+        <!-- KPIs -->
+        <section class="row g-3 mb-3">
+          <div class="col-12 col-sm-6 col-lg-3">
+            <div class="kpi-card p-3">
+              <div class="small text-muted">Cantidad de Quejas</div>
+              <div id="kpiTotal" class="kpi-value">–</div>
+            </div>
+          </div>
+          <div class="col-12 col-sm-6 col-lg-3">
+            <div class="kpi-card p-3">
+              <div class="small text-muted">Campos detectados</div>
+              <div id="kpiCampos" class="kpi-value">–</div>
+            </div>
+          </div>
+          <div class="col-12 col-sm-6 col-lg-3">
+            <div class="kpi-card p-3">
+              <div class="small text-muted">Con coordenadas</div>
+              <div id="kpiCoords" class="kpi-value">–</div>
+            </div>
+          </div>
+          <div class="col-12 col-sm-6 col-lg-3">
+            <div class="kpi-card p-3">
+              <div class="small text-muted">Último reporte</div>
+              <div id="kpiUltimo" class="kpi-value">–</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MAPA -->
+        <section class="soft-card p-3 mb-4">
+          <div class="d-flex align-items-center">
+            <h5 class="mb-2 me-auto">Mapa de quejas registradas <span id="mapCount" class="badge text-bg-primary ms-2">0 puntos</span></h5>
+            <div class="btn-group">
+              <button id="btnFit" class="btn btn-sm btn-outline-primary">Ajustar vista</button>
+              <button id="btnGeoJSON" class="btn btn-sm btn-success">Descargar GeoJSON (filtrado)</button>
+            </div>
+          </div>
+          <div class="small text-muted mb-2">Activa/desactiva “💬 Burbujas (tipo)” para ver leyenda por color.</div>
+
+          <div id="map" class="position-relative">
+            <div id="legend" class="legend position-absolute" style="bottom:10px; left:10px; z-index:401;"></div>
+          </div>
+          <div id="mapResumen" class="mt-3 p-2 text-center bg-white rounded shadow-sm"
+               style="border:1px solid #eee; font-size:0.9rem;"></div>
+        </section>
+
+        <!-- GRÁFICAS -->
+        <section class="row g-4 mb-4">
+          <div class="col-12">
+            <div class="chart-card p-3">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <h5 class="mb-0">Quejas por municipio (apilado)</h5>
+                <div class="d-flex align-items-center gap-2">
+                  <label for="topNSelect" class="small text-muted">Top N</label>
+                  <select id="topNSelect" class="form-select form-select-sm" style="width:90px">
+                    <option value="10" selected>10</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="0">Todos</option>
+                  </select>
+                  <button id="btnClearMunFilter" class="btn btn-sm btn-outline-secondary">Borrar filtro</button>
+                </div>
+              </div>
+              <div class="small text-muted mb-2">Clic en una barra filtra; Ctrl/Cmd + clic limpia.</div>
+              <div class="chart-container"><canvas id="chartQuejasMunApilado"></canvas></div>
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-4">
+            <div class="chart-card p-3">
+              <h5 class="mb-2">Distribución por tipo</h5>
+              <div class="chart-container"><canvas id="pieTipo"></canvas></div>
+            </div>
+          </div>
+          <div class="col-12 col-lg-4">
+            <div class="chart-card p-3">
+              <h5 class="mb-2">Distribución por canal</h5>
+              <div class="chart-container"><canvas id="pieCanal"></canvas></div>
+            </div>
+          </div>
+          <div class="col-12 col-lg-4">
+            <div class="chart-card p-3">
+              <h5 class="mb-2">Distribución por reportante</h5>
+              <div class="chart-container"><canvas id="pieReportante"></canvas></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TABLA -->
+        <section class="soft-card p-3">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <h5 class="mb-0 me-auto">Detalle</h5>
+            <select id="tblFiltroMunicipio" class="form-select form-select-sm" style="min-width:220px">
+              <option value="">Tabla: todos los municipios</option>
+            </select>
+            <select id="tblFiltroCanal" class="form-select form-select-sm" style="min-width:200px">
+              <option value="">Tabla: todos los canales</option>
+            </select>
+          </div>
+          <div class="table-responsive">
+            <table id="tbl" class="table table-striped table-hover w-100"></table>
+          </div>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <!-- Column Mapping Modal (lite) -->
+  <div class="modal-lite" id="modalCols" aria-hidden="true">
+    <div class="win">
+      <div class="head">
+        <h6 class="m-0">Configurar mapeo de columnas</h6>
+        <span class="ms-auto small text-muted">Se guarda en tu navegador</span>
+      </div>
+      <div class="body">
+        <p class="small text-muted mb-2">Selecciona a qué columna del CSV corresponde cada campo requerido por el tablero. Si el nombre del CSV ya coincide, quedará seleccionado automáticamente.</p>
+        <div id="colsForm" class="row g-2"></div>
+      </div>
+      <div class="foot">
+        <button class="btn btn-outline-secondary btn-sm" id="btnColsCancel">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="btnColsSave">Guardar y recargar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS libs -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <script>
+  /* ===================== CONFIG ===================== */
+  const DEFAULT_URL = "https://raw.githubusercontent.com/JavierMarin7/vigilancia_electoral/refs/heads/main/REGISTRO_QUEJA.csv";
+  const URL_PARAM = new URLSearchParams(location.search).get('src');
+  const SOURCE_URL = URL_PARAM || DEFAULT_URL;
+
+  // Catálogos de colores
+  const TIPO_COLOR = { 'FRAUDE':'#dc3545', 'QUEMA':'#fd7e14', 'PROCEDIMIENTO':'#0d6efd', 'OTRO':'#6c757d' };
+  const COLOR_CANAL = {
+    'WHATSAPP':'#25D366','TELÉFONO':'#0d6efd','TELEFONO':'#0d6efd','APP':'#20c997',
+    'PORTAL':'#6f42c1','SEDE ELECTRÓNICA':'#fd7e14','SEDE ELECTRONICA':'#fd7e14','REDES':'#dc3545','OTRO':'#6c757d'
+  };
+  const COLOR_REPORTANTE = { 'CIUDADANO':'#0d6efd','PROCURADURIA':'#198754','DEFENSORIA':'#6f42c1','PERSONERIA':'#fd7e14','OTRO':'#6c757d' };
+
+  // Campos requeridos por el tablero (→ objetivo) y posibles alias para autodectección
+  const REQUIRED_FIELDS = {
+    fecha_registro:  ['fecha_registro','fecha','FECHA_REGISTRO'],
+    municipio:       ['municipio','MUNICIPIO'],
+    canal_recepcion: ['canal_recepcion','canal','CANAL_RECEPCION','CANAL'],
+    reportante_tipo: ['reportante_tipo','reportante','REPORTANTE_TIPO','REPORTANTE'],
+    tipo_queja:      ['tipo_queja','tipo','TIPO_QUEJA','TIPO'],
+    latitud_queja:   ['latitud_queja','latitud','LAT','Latitud','LATITUD_QUEJA'],
+    longitud_queja:  ['longitud_queja','longitud','LON','Longitud','LONGITUD_QUEJA'],
+    descripcion:     ['descripcion','detalle','DESCRIPCION','DETALLE']
+  };
+
+  /* ===================== ESTADO ===================== */
+  let RAW=[], LIST=[];
+  let MAP, baseOSM, baseEsri, CAPA_PUNTOS, CAPA_BURBUJAS;
+  let DT, charts={}, autoTimer=null;
+  const lastUpdateEl = document.getElementById('lastUpdate');
+
+  /* ===================== HELPERS ===================== */
+  const uniq = arr => [...new Set(arr.filter(x=>x!=null && String(x).trim()!==''))];
+  const groupBy = (rows, keyFn) => { const m=new Map(); for(const r of rows){ const k=keyFn(r); if(!m.has(k)) m.set(k,[]); m.get(k).push(r);} return m; };
+  const parseDate = v => v ? new Date(v) : null;
+  const normTipo = v => { const t=(v||'').toString().trim().toUpperCase(); if(['FRAUDE','QUEMA','PROCEDIMIENTO'].includes(t)) return t; return t||'OTRO'; };
+
+  function iconDot(hex="#0d6efd"){ const svg=encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="13" cy="13" r="9" fill="${hex}" stroke="white" stroke-width="2"/></svg>`); return L.icon({ iconUrl:`data:image/svg+xml,${svg}`, iconSize:[26,26], iconAnchor:[13,13] }); }
+  function fitBoundsToPoints(data){ const pts=data.filter(d=>Number.isFinite(d.lat)&&Number.isFinite(d.lon)); if(!pts.length) return; const b=L.latLngBounds(pts.map(d=>[d.lat,d.lon])); MAP.fitBounds(b.pad(0.15)); }
+
+  function addDiag(line){ const ul=document.getElementById('diagList'); const li=document.createElement('li'); li.textContent=line; ul.appendChild(li); }
+  function setDiagStatus(text, kind='light'){ const el=document.getElementById('diagStatus'); el.textContent=text; el.className=`badge text-bg-${kind}`; }
+
+  /* ===================== PROBADOR DE FUENTE ===================== */
+  async function probeAndGetText(url){
+    addDiag(`Consultando: ${url}`);
+    const t0=performance.now();
+    let res;
+    try{
+      res = await fetch(url, { cache:'no-store' });
+    }catch(e){
+      setDiagStatus('Error de red', 'danger');
+      addDiag(`❌ Error de red/CORS: ${e.message}`);
+      throw e;
+    }
+    const t= Math.round(performance.now()-t0);
+    addDiag(`HTTP ${res.status} (${t} ms)`);
+    addDiag(`Content-Type: ${res.headers.get('content-type')||'?'} | Content-Length: ${res.headers.get('content-length')||'?'} | Final URL: ${res.url}`);
+    if(!res.ok){ setDiagStatus(`HTTP ${res.status}`,'danger'); throw new Error(`HTTP ${res.status}`); }
+    const text = await res.text();
+    if(!text || !text.trim()){ setDiagStatus('CSV vacío','warning'); addDiag('⚠️ Respuesta vacía.'); }
+    return text;
+  }
+
+  /* ===================== MAPEO DE COLUMNAS ===================== */
+  function getSavedColMap(){ try{ return JSON.parse(localStorage.getItem('colmap_vigilec')||'{}'); }catch(_){ return {}; } }
+  function saveColMap(m){ localStorage.setItem('colmap_vigilec', JSON.stringify(m||{})); }
+
+  function autoDetectColMap(headers){
+    const map = {};
+    const lower = headers.map(h=>h.toString());
+    for(const [target, aliases] of Object.entries(REQUIRED_FIELDS)){
+      const hit = lower.find(h => aliases.some(a => a.toLowerCase() === h.toLowerCase()));
+      map[target] = hit || '';
+    }
+    return map;
+  }
+
+  function buildColsForm(headers){
+    const saved = getSavedColMap();
+    const autod = autoDetectColMap(headers);
+    const current = { ...autod, ...saved };
+    const container = document.getElementById('colsForm');
+    container.innerHTML = '';
+    const pretty = {
+      fecha_registro:'Fecha de registro', municipio:'Municipio', canal_recepcion:'Canal recepción', reportante_tipo:'Tipo reportante',
+      tipo_queja:'Tipo de queja', latitud_queja:'Latitud', longitud_queja:'Longitud', descripcion:'Descripción'
+    };
+    const mkSel = (label, target) => {
+      const wrap = document.createElement('div'); wrap.className='col-12 col-md-6';
+      wrap.innerHTML = `<label class="form-label small">${label}</label>`;
+      const sel = document.createElement('select'); sel.className='form-select form-select-sm';
+      sel.dataset.target = target;
+      sel.innerHTML = ['<option value="">— Seleccionar —</option>'].concat(headers.map(h=>`<option ${current[target]===h?'selected':''}>${h}</option>`)).join('');
+      wrap.appendChild(sel); container.appendChild(wrap);
+    };
+    for(const [k, lbl] of Object.entries(pretty)){ mkSel(lbl, k); }
+  }
+
+  function openColsModal(headers){ buildColsForm(headers); document.getElementById('modalCols').style.display='block'; }
+  function closeColsModal(){ document.getElementById('modalCols').style.display='none'; }
+  document.getElementById('btnColsCancel').onclick = closeColsModal;
+  document.getElementById('btnColsSave').onclick = () => {
+    const selects = document.querySelectorAll('#colsForm select');
+    const map = {}; selects.forEach(s => map[s.dataset.target] = s.value||'');
+    saveColMap(map); closeColsModal(); loadData();
+  };
+
+  /* ===================== LECTURA CSV ===================== */
+  async function loadFromUrl(url){
+    setDiagStatus('Consultando…','info');
+    document.getElementById('diagList').innerHTML = '';
+    try{
+      const text = await probeAndGetText(url);
+      const parsed = Papa.parse(text, { header:true, dynamicTyping:false, skipEmptyLines:true });
+      const rows = parsed.data || [];
+      addDiag(`Filas leídas: ${rows.length}`);
+      addDiag(`Columnas detectadas: ${(parsed.meta && parsed.meta.fields) ? parsed.meta.fields.join(', ') : '(?)'}`);
+      if(!rows.length){ setDiagStatus('Sin filas','warning'); }
+      const headers = parsed.meta?.fields || Object.keys(rows[0]||{});
+      const saved = getSavedColMap();
+      if(!saved || Object.keys(saved).length===0){ addDiag('ℹ️ Usando mapeo automático de columnas'); }
+      return remapRows(rows, headers);
+    }catch(e){
+      console.error(e);
+      setDiagStatus('Error','danger');
+      addDiag(`❌ No se pudo leer/parsear el CSV: ${e.message}`);
+      throw e;
+    }
+  }
+
+  function remapRows(data, headers){
+    const saved = getSavedColMap();
+    const autod = autoDetectColMap(headers);
+    const map = { ...autod, ...saved };
+    // Mostrar resumen del mapeo en diagnóstico
+    const pairs = Object.entries(map).map(([k,v]) => `${k} ⇢ ${v||'(no asignado)'}`);
+    addDiag('Mapeo de columnas: ' + pairs.join(' | '));
+
+    // Si falta algo crítico, ofrecer abrir modal
+    const critical = ['fecha_registro','municipio','tipo_queja'];
+    const missing = critical.filter(k => !map[k]);
+    if(missing.length){ addDiag('⚠️ Campos críticos sin asignar: ' + missing.join(', ') + '. Abre “Revisar columnas”.'); }
+
+    const out = (data||[]).map(r=>{
+      const pick = k => map[k] ? r[map[k]] : undefined;
+      const fecha = parseDate(pick('fecha_registro'));
+      const lat = Number(pick('latitud_queja'));
+      const lon = Number(pick('longitud_queja'));
+      return {
+        raw:r,
+        municipio: pick('municipio') || '',
+        canal: pick('canal_recepcion') || '',
+        reportante: pick('reportante_tipo') || '',
+        tipo: pick('tipo_queja') || '',
+        fecha, fecha_txt: fecha ? fecha.toISOString().slice(0,10) : '',
+        lat: Number.isFinite(lat)? lat : null,
+        lon: Number.isFinite(lon)? lon : null,
+        detalle: pick('descripcion') || ''
+      };
+    });
+    return { rows: out, headers, map };
+  }
+
+  /* ===================== MAPA ===================== */
+  function initMap(){
+    MAP = L.map('map').setView([4.6,-74.1], 6);
+    baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(MAP);
+    baseEsri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19, attribution:'Tiles © Esri'});
+    CAPA_PUNTOS   = L.markerClusterGroup({ chunkedLoading:true, disableClusteringAtZoom:14 });
+    CAPA_BURBUJAS = L.layerGroup();
+
+    L.control.layers(
+      { 'OSM':baseOSM, 'Satélite (Esri)':baseEsri },
+      { '🏠 Quejas (puntos)':CAPA_PUNTOS, '💬 Burbujas (tipo)':CAPA_BURBUJAS },
+      { position:'topright', collapsed:true }
+    ).addTo(MAP);
+
+    const legendEl = document.getElementById('legend');
+    legendEl.innerHTML = Object.entries(TIPO_COLOR).map(([k,c]) => `<div><i style="background:${c}"></i>${k}</div>`).join('');
+    legendEl.style.display = MAP.hasLayer(CAPA_BURBUJAS) ? 'block' : 'none';
+    MAP.on('overlayadd',  e => { if(e.name==='💬 Burbujas (tipo)') legendEl.style.display='block'; });
+    MAP.on('overlayremove',e => { if(e.name==='💬 Burbujas (tipo)') legendEl.style.display='none'; });
+
+    document.getElementById('btnFit').addEventListener('click', ()=> fitBoundsToPoints(LIST));
+    document.getElementById('btnGeoJSON').addEventListener('click', downloadGeoJSON);
+  }
+
+  function renderMap(data){
+    CAPA_PUNTOS.clearLayers();
+    CAPA_BURBUJAS.clearLayers();
+
+    const pts = data.filter(d => Number.isFinite(d.lat) && Number.isFinite(d.lon));
+    document.getElementById('mapCount').textContent = `${pts.length} ${pts.length===1?'punto':'puntos'}`;
+
+    // Resumen por tipo
+    const totByTipo = {}; for (const r of pts){ const t=normTipo(r.tipo); totByTipo[t]=(totByTipo[t]||0)+1; }
+    const resumenEl = document.getElementById('mapResumen');
+    resumenEl.innerHTML = Object.entries(totByTipo).map(([k,n]) =>
+      `<span class="badge rounded-pill" style="background:${TIPO_COLOR[k]||'#6c757d'};color:#fff;margin:2px 4px">${k}: ${n}</span>`
+    ).join(' ');
+
+    // Marcadores
+    for (const r of pts){
+      const pop = `
+        <div style="min-width:220px">
+          <div><b>${r.municipio || '(sin municipio)'}</b></div>
+          <div><small>${r.fecha_txt || ''}</small></div>
+          <hr class="my-1"/>
+          <div><b>Tipo:</b> ${normTipo(r.tipo)}</div>
+          <div><b>Canal:</b> ${r.canal || '-'}</div>
+          <div><b>Reportante:</b> ${r.reportante || '-'}</div>
+          ${r.detalle ? `<div class="mt-1">${r.detalle}</div>` : ''}
+        </div>`;
+      CAPA_PUNTOS.addLayer(L.marker([r.lat, r.lon], { icon: iconDot(TIPO_COLOR[normTipo(r.tipo)]||'#0d6efd') }).bindPopup(pop));
+    }
+
+    // Burbujas agregadas por lat/lon/tipo
+    const agg = new Map();
+    for (const r of pts){
+      const key = `${r.lat.toFixed(5)}|${r.lon.toFixed(5)}|${normTipo(r.tipo)}`;
+      if(!agg.has(key)) agg.set(key,{lat:+r.lat.toFixed(5), lon:+r.lon.toFixed(5), tipo:normTipo(r.tipo), n:0});
+      agg.get(key).n++;
+    }
+    const scale = c => Math.min(22, 4 + 4 * Math.sqrt(c));
+    agg.forEach(({lat,lon,tipo,n})=>{
+      const color = TIPO_COLOR[tipo] || '#777';
+      CAPA_BURBUJAS.addLayer(L.circleMarker([lat,lon],{ radius:scale(n), color, fillColor:color, fillOpacity:.25, weight:2 })
+        .bindPopup(`<b>${tipo}</b><br/>Quejas en este punto: ${n}<br/><small>${lat}, ${lon}</small>`));
+    });
+
+    if(!MAP.hasLayer(CAPA_PUNTOS)) CAPA_PUNTOS.addTo(MAP);
+    if(!MAP.hasLayer(CAPA_BURBUJAS)) CAPA_BURBUJAS.addTo(MAP);
+    fitBoundsToPoints(pts);
+  }
+
+  function downloadGeoJSON(){
+    const feats = LIST.filter(r=>Number.isFinite(r.lat)&&Number.isFinite(r.lon)).map(r=>({
+      type:'Feature', geometry:{ type:'Point', coordinates:[r.lon, r.lat] },
+      properties:{ municipio:r.municipio, canal:r.canal, reportante:r.reportante, tipo:normTipo(r.tipo), fecha:r.fecha_txt, detalle:r.detalle }
+    }));
+    const blob = new Blob([JSON.stringify({type:'FeatureCollection',features:feats},null,2)], {type:'application/geo+json'});
+    const url = URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download='quejas_filtrado.geojson'; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+
+  /* ===================== CHARTS ===================== */
+  function ensureChart(id, cfg){ if(charts[id]) charts[id].destroy(); charts[id]=new Chart(document.getElementById(id), cfg); }
+  function countBy(arr, keyFn) { const m=new Map(); for(const r of arr){ const k=(keyFn(r)||'OTRO'); m.set(k,(m.get(k)||0)+1);} return m; }
+  function makePie(canvasId, counts, colorMap){ const labels=Array.from(counts.keys()); const data=labels.map(l=>counts.get(l)); ensureChart(canvasId,{ type:'pie', data:{ labels, datasets:[{ data, backgroundColor: labels.map(l=> colorMap[(l||'').toUpperCase()] || '#999') }] }, options:{ maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } } }); }
+
+  function renderQuejasCharts(data){
+    // Barras apiladas por municipio (Top N)
+    const byMun = groupBy(data.filter(d=>d.municipio), d=>d.municipio);
+    const filas = Array.from(byMun.entries()).map(([mun,arr])=>{
+      const c={'FRAUDE':0,'QUEMA':0,'PROCEDIMIENTO':0,'OTRO':0}; for(const r of arr){ c[normTipo(r.tipo)] = (c[normTipo(r.tipo)]||0)+1; }
+      const total = Object.values(c).reduce((a,b)=>a+b,0);
+      return { municipio:mun, total, ...c };
+    }).sort((a,b)=>b.total-a.total);
+
+    const selTop = document.getElementById('topNSelect');
+    const topN = selTop ? parseInt(selTop.value) : 10;
+    const top = topN>0 ? filas.slice(0,topN) : filas;
+
+    const labels = top.map(x=>x.municipio);
+    const dFraude = top.map(x=>x['FRAUDE']||0);
+    const dQuema  = top.map(x=>x['QUEMA']||0);
+    const dProc   = top.map(x=>x['PROCEDIMIENTO']||0);
+    const dOtro   = top.map(x=>x['OTRO']||0);
+
+    ensureChart('chartQuejasMunApilado',{
+      type:'bar',
+      data:{ labels, datasets:[
+        {label:'Fraude',          data:dFraude, backgroundColor:TIPO_COLOR['FRAUDE'],          stack:'q'},
+        {label:'Quema',           data:dQuema,  backgroundColor:TIPO_COLOR['QUEMA'],           stack:'q'},
+        {label:'Procedimiento',   data:dProc,   backgroundColor:TIPO_COLOR['PROCEDIMIENTO'],   stack:'q'},
+        {label:'Otro',            data:dOtro,   backgroundColor:TIPO_COLOR['OTRO'],            stack:'q'}
+      ]},
+      options:{ maintainAspectRatio:false, indexAxis:'y', plugins:{ legend:{position:'bottom'} }, scales:{ x:{beginAtZero:true, stacked:true}, y:{stacked:true} },
+        onClick:(evt,elements)=>{ if(!elements?.length) return; const i=elements[0].index; const municipio=labels[i]; const limpiar=evt.ctrlKey||evt.metaKey; const sel=document.getElementById('f_municipio'); sel.value = limpiar ? '' : municipio; applyFiltersAndRender(!limpiar); setTimeout(()=>fitBoundsToPoints(LIST),0); }
+      }
+    });
+
+    if(selTop && !selTop.dataset.bound){ selTop.addEventListener('change', ()=>renderQuejasCharts(data)); selTop.dataset.bound='1'; }
+
+    // Tortas
+    makePie('pieTipo',       countBy(data, r=>normTipo(r.tipo)), TIPO_COLOR);
+    makePie('pieCanal',      countBy(data, r=> (r.canal||'').toString().toUpperCase()), COLOR_CANAL);
+    makePie('pieReportante', countBy(data, r=> (r.reportante||'').toString().toUpperCase()), COLOR_REPORTANTE);
+  }
+
+  /* ===================== TABLA ===================== */
+  function renderTable(data){
+    const rows = data.map(r=>[
+      r.fecha_txt || '', r.municipio || '', r.canal || '', r.reportante || '', normTipo(r.tipo),
+      Number.isFinite(r.lat)&&Number.isFinite(r.lon) ? `${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}` : '', r.detalle || ''
+    ]);
+    if(DT) DT.destroy();
+    DT = $('#tbl').DataTable({
+      data: rows,
+      columns: [
+        {title:'FECHA'},{title:'MUNICIPIO'},{title:'CANAL'},{title:'REPORTANTE'},{title:'TIPO'},{title:'COORDENADAS'},{title:'DETALLE'}
+      ],
+      order:[[0,'desc']], pageLength:10,
+      language:{ url:'https://cdn.datatables.net/plug-ins/1.13.8/i18n/es-ES.json' },
+      dom:'Bfrtip',
+      buttons:[
+        { extend:'excelHtml5', title:'Quejas', text:'Excel', className:'btn btn-success btn-sm' },
+        { extend:'csvHtml5',   title:'Quejas', text:'CSV',   className:'btn btn-outline-secondary btn-sm' },
+        { extend:'print',      text:'Imprimir', className:'btn btn-outline-primary btn-sm' }
+      ]
+    });
+
+    const mVals = uniq(data.map(r=>r.municipio)).sort((a,b)=>a.localeCompare(b,'es',{numeric:true}));
+    const cVals = uniq(data.map(r=>r.canal)).sort((a,b)=>a.localeCompare(b,'es',{numeric:true}));
+    document.getElementById('tblFiltroMunicipio').innerHTML = `<option value="">Tabla: todos los municipios</option>` + mVals.map(v=>`<option>${v}</option>`).join('');
+    document.getElementById('tblFiltroCanal').innerHTML     = `<option value="">Tabla: todos los canales</option>`     + cVals.map(v=>`<option>${v}</option>`).join('');
+    document.getElementById('tblFiltroMunicipio').onchange = function(){ DT.column(1).search(this.value ? '^'+this.value.replace(/[.*+?^${}()|[\]\/]/g,'\$&')+'$' : '', true, false).draw(); };
+    document.getElementById('tblFiltroCanal').onchange     = function(){ DT.column(2).search(this.value ? '^'+this.value.replace(/[.*+?^${}()|[\]\/]/g,'\$&')+'$' : '', true, false).draw(); };
+  }
+
+  /* ===================== FILTROS & RENDER ===================== */
+  function fillFilterOptions(data){
+    const setSel = (id, values) => { document.getElementById(id).innerHTML = `<option value="">Todos</option>` + values.map(v=>`<option>${v}</option>`).join(''); };
+    setSel('f_municipio', uniq(data.map(r=>r.municipio)).sort((a,b)=>a.localeCompare(b,'es',{numeric:true})));
+    setSel('f_canal',     uniq(data.map(r=>r.canal)).sort((a,b)=>a.localeCompare(b,'es',{numeric:true})));
+    setSel('f_reportante',uniq(data.map(r=>r.reportante)).sort((a,b)=>a.localeCompare(b,'es',{numeric:true})));
+    setSel('f_tipo',      uniq(data.map(r=>normTipo(r.tipo))).sort((a,b)=>a.localeCompare(b,'es',{numeric:true})));
+  }
+
+  function applyFiltersAndRender(resetAll=false){
+    const fMun = document.getElementById('f_municipio').value || '';
+    const fCan = document.getElementById('f_canal').value || '';
+    const fRep = document.getElementById('f_reportante').value || '';
+    const fTip = document.getElementById('f_tipo').value || '';
+    const fDesde = document.getElementById('f_desde').value || '';
+    const fHasta = document.getElementById('f_hasta').value || '';
+
+    LIST = resetAll ? [...RAW] : RAW.filter(r=>{
+      if(fMun && r.municipio !== fMun) return false;
+      if(fCan && r.canal !== fCan) return false;
+      if(fRep && r.reportante !== fRep) return false;
+      if(fTip && normTipo(r.tipo) !== fTip) return false;
+      if(fDesde && (!r.fecha || r.fecha < new Date(fDesde))) return false;
+      if(fHasta && (!r.fecha || r.fecha > new Date(fHasta))) return false;
+      return true;
+    });
+
+    renderKPIs(LIST);
+    renderMap(LIST);
+    renderQuejasCharts(LIST);
+    renderTable(LIST);
+  }
+
+  function renderKPIs(data){
+    const total = data.length;
+    const campos = Object.keys(data[0] || {}).length;
+    const coords = data.filter(r=>Number.isFinite(r.lat)&&Number.isFinite(r.lon)).length;
+    const maxDate = data.map(r=>r.fecha).filter(Boolean).sort((a,b)=>b-a)[0];
+
+    document.getElementById('kpiTotal').textContent  = total.toLocaleString('es-CO');
+    document.getElementById('kpiCampos').textContent = String(campos || '–');
+    document.getElementById('kpiCoords').textContent = coords.toLocaleString('es-CO');
+    document.getElementById('kpiUltimo').textContent = maxDate ? maxDate.toISOString().slice(0,10) : '–';
+  }
+
+  /* ===================== CARGA PRINCIPAL ===================== */
+  async function loadData(url = SOURCE_URL){
+    const btn = document.getElementById('btnCargar');
+    btn.disabled = true; btn.textContent = 'Cargando…';
+    try{
+      const { rows, headers } = await loadFromUrl(url);
+      RAW = rows;
+      fillFilterOptions(RAW);
+      applyFiltersAndRender(true);
+      lastUpdateEl.textContent = 'Última carga: ' + new Date().toLocaleString();
+      lastUpdateEl.className = 'badge text-bg-success status-badge';
+      setDiagStatus('OK','success');
+      // Habilitar botón columnas (construimos el form con headers actuales)
+      document.getElementById('btnCols').onclick = () => openColsModal(headers);
+    }catch(err){
+      console.error(err);
+      lastUpdateEl.textContent = 'Error de carga';
+      lastUpdateEl.className = 'badge text-bg-danger status-badge';
+    }finally{
+      btn.disabled = false; btn.textContent = 'Refrescar datos';
+    }
+  }
+
+  /* ===================== EVENTOS ===================== */
+  document.getElementById('btnFiltrar').addEventListener('click', ()=> applyFiltersAndRender());
+  document.getElementById('btnLimpiar').addEventListener('click', ()=>{ ['f_municipio','f_canal','f_reportante','f_tipo','f_desde','f_hasta'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; }); applyFiltersAndRender(true); });
+  document.getElementById('btnCargar').addEventListener('click', ()=> loadData());
+  document.getElementById('btnClearMunFilter').addEventListener('click', ()=>{ const sel=document.getElementById('f_municipio'); sel.value=''; applyFiltersAndRender(true); });
+  document.getElementById('btnCargarURL').addEventListener('click', async ()=>{
+    const u = document.getElementById('urlQuejas').value.trim(); if(!u) return alert('Ingresa una URL a un CSV público.');
+    await loadData(u);
+  });
+
+  // Fallback: carga manual con <input type="file">
+  document.getElementById('fileQuejas')?.addEventListener('change', async (ev)=>{
+    const f = ev.target.files?.[0]; if(!f) return;
+    setDiagStatus('Leyendo archivo…','info');
+    document.getElementById('diagList').innerHTML = '';
+    addDiag(`Archivo local: ${f.name} (${f.size} bytes)`);
+    const text = await f.text();
+    const parsed = Papa.parse(text, { header:true, dynamicTyping:false, skipEmptyLines:true });
+    const headers = parsed.meta?.fields || [];
+    const { rows } = remapRows(parsed.data||[], headers);
+    RAW = rows; fillFilterOptions(RAW); applyFiltersAndRender(true);
+    lastUpdateEl.textContent = 'Carga manual: ' + (f.name||'quejas.csv');
+    lastUpdateEl.className = 'badge text-bg-warning status-badge';
+    setDiagStatus('OK (archivo local)','success');
+    document.getElementById('btnCols').onclick = () => openColsModal(headers);
+  });
+
+// Toggle diagnóstico (mostrar/ocultar)
+document.getElementById('btnToggleDiag')?.addEventListener('click', function(){
+  const sec = document.getElementById('diagSection');
+  if(!sec) return;
+  const isHidden = sec.classList.toggle('diag-hidden');
+  this.textContent = isHidden ? 'Mostrar' : 'Ocultar';
+});
+
+  /* ===================== STARTUP ===================== */
+  initMap();
+  loadData();
+  // autoTimer = setInterval(loadData, 60000);
+  </script>
+</body>
+</html>
